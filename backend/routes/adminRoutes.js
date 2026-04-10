@@ -15,6 +15,7 @@ router.post('/change-consultation-status', protectAdmin, changeConsultationStatu
 router.post('/cancel-appointment', protectAdmin, cancelAppointment);
 
 // Add Doctor (Admin only)
+
 router.post("/add-doctor", addDoctor); 
 router.post("/complete-registration", completeRegistration);
 // Verify Doctor (Public link from email)

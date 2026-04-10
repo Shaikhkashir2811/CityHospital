@@ -14,48 +14,63 @@ const VerifyDoctor = () => {
   const [done, setDone] = useState(false);
 
   const getAuthHeaders = () => ({
-  headers: { 
-    Authorization: `Bearer ${localStorage.getItem('token')}`,
-    atoken: localStorage.getItem('atoken') // Including 'atoken' as a backup for your middleware
-  }
-});
-
- const handleActivate = async (e) => {
-  e.preventDefault();
-  
-  // 1. Client-side validation
-  if (passwords.password !== passwords.confirm) {
-    return setError("Passwords do not match");
-  }
-  
-  setError(""); // Clear previous errors
-  setLoading(true);
-
-  try {
-    // 2. Use 'api' instance instead of 'axios'
-    // 3. Remove hardcoded 'http://localhost:4000'
-    // 4. If your backend requires headers, we include getAuthHeaders()
-    const { data } = await api.post(
-      '/api/admin/complete-registration', 
-      {
-        token, // This 'token' usually comes from useParams() in the URL
-        password: passwords.password
-      },
-      getAuthHeaders() 
-    );
-
-    if (data.success) {
-      setDone(true);
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('token')}`,
+      atoken: localStorage.getItem('atoken') // Including 'atoken' as a backup for your middleware
     }
-  } catch (err) {
-    // 5. Improved error messaging
-    console.error("Activation Error:", err);
-    const msg = err.response?.data?.message || "This link has expired or is invalid.";
-    setError(msg);
-  } finally {
-    setLoading(false);
-  }
-};
+  });
+
+  useEffect(() => {
+    const checkToken = async () => {
+      try {
+        // This calls your Backend GET route: router.get("/verify/:token", verifyDoctor);
+        const { data } = await api.get(`/api/admin/verify/${token}`);
+
+        if (data.success) {
+          console.log("Token is valid, doctor found:", data.doctor.name);
+        }
+      } catch (err) {
+        // If the token is fake, expired, or already used, show an error immediately
+        setError("This verification link is invalid or has already expired.");
+      }
+    };
+
+    if (token) {
+      checkToken();
+    }
+  }, [token]);
+
+  const handleActivate = async (e) => {
+    e.preventDefault();
+
+    if (passwords.password !== passwords.confirm) {
+      return setError("Passwords do not match");
+    }
+
+    setError("");
+    setLoading(true);
+
+    try {
+      // No need for getAuthHeaders() here because:
+      // 1. api.js interceptor handles it automatically
+      // 2. This is a public route for new users
+      const { data } = await api.post('/api/admin/complete-registration', {
+        token,
+        password: passwords.password
+      });
+
+      if (data.success) {
+        setDone(true);
+      }
+    } catch (err) {
+      console.error("Activation Error:", err);
+      // Picks up the specific error message from your backend (e.g., "Link expired")
+      const msg = err.response?.data?.msg || err.response?.data?.message || "Invalid or expired link.";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (done) return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -84,11 +99,11 @@ const VerifyDoctor = () => {
             <label className="text-xs font-bold text-slate-500 uppercase ml-1">New Password</label>
             <div className="relative mt-1">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
+              <input
                 type="password" required minLength={6}
                 className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 outline-none focus:border-green-500"
                 value={passwords.password}
-                onChange={(e) => setPasswords({...passwords, password: e.target.value})}
+                onChange={(e) => setPasswords({ ...passwords, password: e.target.value })}
               />
             </div>
           </div>
@@ -97,11 +112,11 @@ const VerifyDoctor = () => {
             <label className="text-xs font-bold text-slate-500 uppercase ml-1">Confirm Password</label>
             <div className="relative mt-1">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-              <input 
+              <input
                 type="password" required
                 className="w-full pl-12 pr-4 py-4 rounded-2xl border border-slate-200 outline-none focus:border-green-500"
                 value={passwords.confirm}
-                onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
+                onChange={(e) => setPasswords({ ...passwords, confirm: e.target.value })}
               />
             </div>
           </div>
