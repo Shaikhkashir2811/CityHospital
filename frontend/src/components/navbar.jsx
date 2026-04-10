@@ -59,7 +59,7 @@ const NavBar = ({ user, onLogout }) => {
   );
 
   return (
-    <nav className="fixed top-0 right-20 w-full bg-white/90 backdrop-blur-md border-b border-slate-100 z-[100] shadow-sm">
+    <nav className="fixed top-0  w-full bg-white/90 backdrop-blur-md border-b border-slate-100 z-[100] shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-20">
           
