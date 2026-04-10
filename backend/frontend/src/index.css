@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* Optional: Custom Brand Colors for Tailwind v4 */
+
+/* Reset the root to be full width and height */
+:root {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #ffffff;
+}
+
+/* Ensure the React root doesn't restrict the layout */
+#root {
+  width: 100%;
+  min-height: 100vh;
+}
