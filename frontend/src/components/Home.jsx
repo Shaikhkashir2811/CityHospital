@@ -192,7 +192,7 @@ const Home = () => {
               <ul className="space-y-5 text-sm">
                 <li className="flex items-start gap-3">
                   <MapPin className="text-green-500 shrink-0" size={18} />
-                  <span className="leading-relaxed text-slate-400">5/B Shakti Society Danilimda Ahmedabad</span>
+                  <span className="leading-relaxed text-slate-400">Ahmedabad</span>
                 </li>
                 <li className="flex items-center gap-3">
                   <Phone className="text-green-500 shrink-0" size={18} />
