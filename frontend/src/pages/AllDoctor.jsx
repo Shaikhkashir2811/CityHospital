@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import api from '../api/api';
 import {
   IndianRupee, UserCircle, X, Save, Plus, Search, SlidersHorizontal,
   Calendar, Clock, ChevronDown, Trash2
 } from 'lucide-react';
+
+import DatePicker from 'react-multi-date-picker';
 
 
 const CATEGORIES = ['All', 'Cardiologist', 'Dermatologist', 'Neurologist', 'Orthopedic',
@@ -21,41 +22,44 @@ const AllDoctors = () => {
   const [selectedDoc, setSelectedDoc] = useState(null);
 
   // Multi-date slot builder: { date -> [slots] }
-  const [dateSlotMap, setDateSlotMap] = useState({});
-  const [targetDate, setTargetDate] = useState('');
+  const [dates, setDates] = useState({});
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+
+  // const [targetDate, setTargetDate] = useState(' ');
   const [hour, setHour] = useState('10');
   const [minute, setMinute] = useState('00');
   const [period, setPeriod] = useState('AM');
 
   const getAuthHeaders = () => ({
-  headers: { 
-    Authorization: `Bearer ${localStorage.getItem('token')}`,
-    atoken: localStorage.getItem('atoken') // Including 'atoken' as a backup for your middleware
-  }
-});
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('token')}`,
+      atoken: localStorage.getItem('atoken') // Including 'atoken' as a backup for your middleware
+    }
+  });
 
   /* ── Fetch All Doctors ── */
-const fetchDoctors = async () => {
-  try {
-    setLoading(true);
+  const fetchDoctors = async () => {
+    try {
+      setLoading(true);
 
-    // Replacement: 
-    // - Use 'api' for the base URL logic
-    // - Call 'getAuthHeaders()' for the security tokens
-    const { data } = await api.get('/api/admin/all-doctors', getAuthHeaders());
+      // Replacement: 
+      // - Use 'api' for the base URL logic
+      // - Call 'getAuthHeaders()' for the security tokens
+      const { data } = await api.get('/api/admin/all-doctors', getAuthHeaders());
 
-    if (data.success) {
-      setDoctors(data.doctors);
-    } else {
-      toast.error(data.message || "Failed to load doctors");
+      if (data.success) {
+        setDoctors(data.doctors);
+      } else {
+        toast.error(data.message || "Failed to load doctors");
+      }
+    } catch (err) {
+      console.error('Fetch failed', err);
+      toast.error(err.response?.data?.message || "Server error");
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.error('Fetch failed', err);
-    toast.error(err.response?.data?.message || "Server error");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   useEffect(() => { fetchDoctors(); }, []);
 
@@ -67,25 +71,51 @@ const fetchDoctors = async () => {
     return matchSearch && matchCat;
   });
 
+  const getDatesInRange = (start, end) => {
+    let dates = [];
+    let current = new Date(start);
+
+    while (current <= new Date(end)) {
+      dates.push(current.toISOString().split("T")[0]);
+      current.setDate(current.getDate() + 1);
+    }
+
+    return dates;
+  };
+
   const openModal = (doc) => {
     setSelectedDoc(doc);
-    setDateSlotMap({});
-    setTargetDate('');
+    setDates({});
+    setStartDate('');
+    setEndDate('');
     setIsModalOpen(true);
   };
 
   const addSlot = () => {
-    if (!targetDate) return alert('Please select a date first.');
+    if (!startDate || !endDate) {
+      return alert('Please select start and end date.');
+    }
+
     const slot = `${hour}:${minute} ${period}`;
-    setDateSlotMap(prev => {
-      const existing = prev[targetDate] || [];
-      if (existing.includes(slot)) return prev;
-      return { ...prev, [targetDate]: [...existing, slot] };
+    const rangeDates = getDatesInRange(startDate, endDate);
+
+    setDates(prev => {
+      let updated = { ...prev };
+
+      rangeDates.forEach(date => {
+        const existing = updated[date] || [];
+
+        if (!existing.includes(slot)) {
+          updated[date] = [...existing, slot];
+        }
+      });
+
+      return updated;
     });
   };
 
   const removeSlot = (date, idx) => {
-    setDateSlotMap(prev => {
+    setDates(prev => {
       const updated = prev[date].filter((_, i) => i !== idx);
       if (updated.length === 0) { const copy = { ...prev }; delete copy[date]; return copy; }
       return { ...prev, [date]: updated };
@@ -93,45 +123,48 @@ const fetchDoctors = async () => {
   };
 
   const removeDate = (date) => {
-    setDateSlotMap(prev => { const copy = { ...prev }; delete copy[date]; return copy; });
+    setDates(prev => { const copy = { ...prev }; delete copy[date]; return copy; });
   };
 
-const updateDatabase = async () => {
-    // 1. Check if there is anything to save
-    const datesToUpdate = Object.keys(dateSlotMap);
+  const updateDatabase = async () => {
+    // ✅ Get all valid dates from state
+    const datesToUpdate = Object.keys(dates).filter(
+      date => dates[date]?.length > 0
+    );
+
     if (datesToUpdate.length === 0) {
-        return alert("Please add at least one date and slot.");
+      return alert("Please add at least one date and slot.");
     }
 
     try {
-        setLoading(true); // Optional: start loading state
+      setLoading(true);
 
-        // 2. Loop through each date in your map and send to backend
-        for (const date of datesToUpdate) {
-            const slots = dateSlotMap[date];
-            
-            // Replacement: use 'api' and pass 'getAuthHeaders()' as the third argument
-            await api.post(
-                '/api/admin/update-date-slots',
-                { 
-                    docId: selectedDoc._id, 
-                    date: date, 
-                    slots: slots 
-                },
-                getAuthHeaders() // Handles Authorization and atoken automatically
-            );
-        }
+      // ✅ Loop through each date properly
+      for (const date of datesToUpdate) {
+        const slots = dates[date];
 
-        alert(`Schedule Updated successfully for ${datesToUpdate.length} date(s)`);
-        setIsModalOpen(false);
-        fetchDoctors(); // Refresh your doctor list
+        await api.post(
+          '/api/admin/update-date-slots',
+          {
+            docId: selectedDoc._id,
+            date: date,     // ✅ FIXED (single date)
+            slots: slots    // ✅ correct
+          },
+          getAuthHeaders()
+        );
+      }
+
+      alert(`Schedule Updated successfully for ${datesToUpdate.length} date(s)`);
+      setIsModalOpen(false);
+      fetchDoctors();
+
     } catch (err) {
-        console.error("Update Error:", err.response?.data);
-        alert(err.response?.data?.message || "Update failed.");
+      console.error("Update Error:", err.response?.data);
+      alert(err.response?.data?.message || "Update failed.");
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-};
+  };
 
   const inputCls = "w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all";
 
@@ -176,11 +209,10 @@ const updateDatabase = async () => {
                   <button
                     key={cat}
                     onClick={() => setActiveCategory(cat)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                      activeCategory === cat
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${activeCategory === cat
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-emerald-300 hover:text-emerald-700'
+                      }`}
                   >
                     {cat}
                   </button>
@@ -220,7 +252,7 @@ const updateDatabase = async () => {
                     : <div className="w-full h-full flex items-center justify-center text-slate-300"><UserCircle size={40} /></div>
                   }
                   {/* Specialty badge overlay */}
-                   
+
                 </div>
 
                 <div className="p-4">
@@ -288,13 +320,15 @@ const updateDatabase = async () => {
                 <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
                   <Calendar size={11} /> Select Date
                 </label>
-                <input
+                {/* <input
                   type="date"
                   className={inputCls}
                   value={targetDate}
                   onChange={e => setTargetDate(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
-                />
+                /> */}
+                <input type="date" onChange={(e) => setStartDate(e.target.value)} />
+                <input type="date" onChange={(e) => setEndDate(e.target.value)} />
               </div>
 
               {/* Step 2: Time + Add */}
@@ -306,15 +340,15 @@ const updateDatabase = async () => {
                   <div className="flex-1 flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
                     <select value={hour} onChange={e => setHour(e.target.value)}
                       className="bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer">
-                      {["01","02","03","04","05","06","07","08","09","10","11","12"].map(h => <option key={h}>{h}</option>)}
+                      {["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(h => <option key={h}>{h}</option>)}
                     </select>
                     <span className="text-slate-400 font-bold text-sm">:</span>
                     <select value={minute} onChange={e => setMinute(e.target.value)}
                       className="bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer">
-                      {["00","15","30","45"].map(m => <option key={m}>{m}</option>)}
+                      {["00", "15", "30", "45"].map(m => <option key={m}>{m}</option>)}
                     </select>
                     <div className="ml-1 flex rounded-lg overflow-hidden border border-slate-200 bg-white">
-                      {['AM','PM'].map(p => (
+                      {['AM', 'PM'].map(p => (
                         <button key={p} onClick={() => setPeriod(p)}
                           className={`px-2.5 py-1 text-xs font-bold transition-all ${period === p ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
                           {p}
@@ -330,13 +364,13 @@ const updateDatabase = async () => {
               </div>
 
               {/* Slot preview per date */}
-              {Object.keys(dateSlotMap).length > 0 && (
+              {Object.keys(dates).length > 0 && (
                 <div>
                   <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">
                     Scheduled Slots
                   </label>
                   <div className="space-y-3">
-                    {Object.entries(dateSlotMap).sort().map(([date, slots]) => (
+                    {Object.entries(dates).sort().map(([date, slots]) => (
                       <div key={date} className="border border-slate-100 rounded-xl overflow-hidden">
                         <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-100">
                           <div className="flex items-center gap-2">
@@ -367,7 +401,7 @@ const updateDatabase = async () => {
                 </div>
               )}
 
-              {Object.keys(dateSlotMap).length === 0 && (
+              {Object.keys(dates).length === 0 && (
                 <div className="text-center py-6 border border-dashed border-slate-200 rounded-xl text-slate-400">
                   <Clock size={24} className="mx-auto mb-2 opacity-30" />
                   <p className="text-xs font-medium">Pick a date, select time and tap +</p>

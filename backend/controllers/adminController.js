@@ -275,27 +275,57 @@ export const deleteDoctor = async (req, res) => {
 
 export const updateDateSlots = async (req, res) => {
   try {
-    const { docId, date, slots } = req.headers.authorization
-      ? req.body
-      : { docId: req.body.docId, date: req.body.date, slots: req.body.slots };
+    const { docId, date, dates, slots } = req.body;
 
-    // 1. Find the doctor first to check the current structure
     const doctor = await doctorModel.findById(docId);
-    if (!doctor) return res.json({ success: false, message: "Doctor not found" });
+    if (!doctor) {
+      return res.json({ success: false, message: "Doctor not found" });
+    }
 
-    // 2. If availableSlots is currently an Array (old data), reset it to an Object
+    // ✅ Ensure availableSlots exists
+    doctor.availableSlots = doctor.availableSlots || {};
+
+    // ✅ Fix old data (array → object)
     if (Array.isArray(doctor.availableSlots)) {
       doctor.availableSlots = {};
     }
 
-    // 3. Update the specific date
-    doctor.availableSlots[date] = slots;
+    // 🔥 CASE 1: If full dates object comes (BEST APPROACH)
+    if (dates && typeof dates === "object") {
+      Object.keys(dates).forEach(d => {
+        doctor.availableSlots[d] = [
+          ...(doctor.availableSlots[d] || []),
+          ...dates[d]
+        ];
+      });
 
-    // 4. Save using markModified
-    doctor.markModified('availableSlots');
+      console.log("Updated multiple dates:", dates);
+    }
+
+    // 🔥 CASE 2: Single date update
+    else if (date && slots) {
+      doctor.availableSlots[date] = [
+        ...(doctor.availableSlots[date] || []),
+        ...slots
+      ];
+
+      console.log("Updated single date:", date, slots);
+    }
+
+    else {
+      return res.json({
+        success: false,
+        message: "Invalid data. Provide date or dates."
+      });
+    }
+
+    doctor.markModified("availableSlots");
     await doctor.save();
 
-    res.json({ success: true, message: `Availability updated for ${date}` });
+    res.json({
+      success: true,
+      message: "Availability updated successfully"
+    });
 
   } catch (error) {
     console.error("Update Error:", error);
