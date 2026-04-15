@@ -275,61 +275,68 @@ export const deleteDoctor = async (req, res) => {
 
 export const updateDateSlots = async (req, res) => {
   try {
-    const { docId, date, dates, slots } = req.body;
+    const { docId, date, slots, days, startDate, endDate } = req.body;
 
+    // 1. Validation: Ensure we have the doctor
     const doctor = await doctorModel.findById(docId);
     if (!doctor) {
-      return res.json({ success: false, message: "Doctor not found" });
+      return res.status(404).json({ success: false, message: "Doctor not found" });
     }
 
-    // ✅ Ensure availableSlots exists
-    doctor.availableSlots = doctor.availableSlots || {};
+    const update = {};
+    const dayMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-    // ✅ Fix old data (array → object)
-    if (Array.isArray(doctor.availableSlots)) {
-      doctor.availableSlots = {};
+    // 2. Logical Filter: Verify the specific 'date' matches the 'days' rule
+    if (date && days && days.length > 0) {
+      const targetDate = new Date(date);
+      const dayOfWeek = dayMap[targetDate.getDay()]; // Converts date to 'Mon', 'Tue', etc.
+
+      // Only proceed with availableSlots if the date matches the selected days
+      if (days.includes(dayOfWeek)) {
+        update[`availableSlots.${date}`] = slots;
+      } else {
+        console.log(`Skipping ${date} because it is a ${dayOfWeek}, which was not selected.`);
+      }
     }
 
-    // 🔥 CASE 1: If full dates object comes (BEST APPROACH)
-    if (dates && typeof dates === "object") {
-      Object.keys(dates).forEach(d => {
-        doctor.availableSlots[d] = [
-          ...(doctor.availableSlots[d] || []),
-          ...dates[d]
-        ];
-      });
+    // 3. Update Recurring Schedule (The "Rule")
+    if (days && days.length > 0 && startDate && endDate) {
+      const sDate = new Date(startDate);
+      const eDate = new Date(endDate);
 
-      console.log("Updated multiple dates:", dates);
+      if (!isNaN(sDate) && !isNaN(eDate)) {
+        // $addToSet prevents duplicate rule entries
+        update.$addToSet = {
+          recurringSchedule: {
+            startDate: sDate,
+            endDate: eDate,
+            days: days,
+            slots: slots || []
+          }
+        };
+      }
     }
 
-    // 🔥 CASE 2: Single date update
-    else if (date && slots) {
-      doctor.availableSlots[date] = [
-        ...(doctor.availableSlots[date] || []),
-        ...slots
-      ];
-
-      console.log("Updated single date:", date, slots);
-    }
-
-    else {
-      return res.json({
-        success: false,
-        message: "Invalid data. Provide date or dates."
-      });
-    }
-
-    doctor.markModified("availableSlots");
-    await doctor.save();
+    // 4. Perform Atomic Update
+    const updatedDoctor = await doctorModel.findByIdAndUpdate(
+      docId,
+      update,
+      { 
+        returnDocument: 'after', 
+        runValidators: true 
+      }
+    );
 
     res.json({
       success: true,
-      message: "Availability updated successfully"
+      message: "Schedule synchronized successfully",
+      availableSlots: updatedDoctor.availableSlots,
+      recurringSchedule: updatedDoctor.recurringSchedule
     });
 
   } catch (error) {
-    console.error("Update Error:", error);
-    res.json({ success: false, message: error.message });
+    console.error("Backend Error:", error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

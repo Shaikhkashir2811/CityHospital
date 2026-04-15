@@ -25,11 +25,13 @@ const AllDoctors = () => {
   const [dates, setDates] = useState({});
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
+  const [selectedDays, setSelectedDays] = useState([]);
 
   // const [targetDate, setTargetDate] = useState(' ');
   const [hour, setHour] = useState('10');
   const [minute, setMinute] = useState('00');
   const [period, setPeriod] = useState('AM');
+  const daysList = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
   const getAuthHeaders = () => ({
     headers: {
@@ -89,6 +91,7 @@ const AllDoctors = () => {
     setStartDate('');
     setEndDate('');
     setIsModalOpen(true);
+    setSelectedDays([]);
   };
 
   const addSlot = () => {
@@ -126,45 +129,57 @@ const AllDoctors = () => {
     setDates(prev => { const copy = { ...prev }; delete copy[date]; return copy; });
   };
 
-  const updateDatabase = async () => {
-    // ✅ Get all valid dates from state
-    const datesToUpdate = Object.keys(dates).filter(
-      date => dates[date]?.length > 0
-    );
+const updateDatabase = async () => {
+  // 1. Get all dates that have slots
+  let datesToUpdate = Object.keys(dates).filter(date => dates[date]?.length > 0);
+  
+  const hasDays = selectedDays && selectedDays.length > 0;
+  if (!hasDays) return alert("Please select days of the week.");
+  if (!startDate || !endDate) return alert("Please select a date range.");
 
-    if (datesToUpdate.length === 0) {
-      return alert("Please add at least one date and slot.");
-    }
+  // ✅ NEW: Filter dates to only include selected days (Mon, Wed, Fri, etc.)
+  // This ensures we only send requests for the days you actually checked
+  const filteredDates = datesToUpdate.filter(dateString => {
+    const dayName = new Date(dateString).toLocaleDateString('en-US', { weekday: 'short' }); 
+    // dayName will be 'Mon', 'Tue', 'Wed', etc.
+    return selectedDays.some(selected => selected.startsWith(dayName));
+  });
 
-    try {
-      setLoading(true);
+  if (filteredDates.length === 0) {
+    return alert("None of the scheduled dates match your selected days of the week.");
+  }
 
-      // ✅ Loop through each date properly
-      for (const date of datesToUpdate) {
-        const slots = dates[date];
+  try {
+    setLoading(true);
 
-        await api.post(
-          '/api/admin/update-date-slots',
-          {
-            docId: selectedDoc._id,
-            date: date,     // ✅ FIXED (single date)
-            slots: slots    // ✅ correct
-          },
-          getAuthHeaders()
-        );
-      }
+    // Format days for Mongoose Enum ('Monday' -> 'Mon')
+    const formattedDays = selectedDays.map(day => day.substring(0, 3));
 
-      alert(`Schedule Updated successfully for ${datesToUpdate.length} date(s)`);
-      setIsModalOpen(false);
-      fetchDoctors();
+    // 2. Parallel Processing using ONLY the filtered dates
+    const updatePromises = filteredDates.map(date => {
+      return api.post('/api/admin/update-date-slots', {
+        docId: selectedDoc._id,
+        date: date,
+        slots: dates[date],
+        days: formattedDays,
+        startDate: startDate,
+        endDate: endDate
+      }, getAuthHeaders());
+    });
 
-    } catch (err) {
-      console.error("Update Error:", err.response?.data);
-      alert(err.response?.data?.message || "Update failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    await Promise.all(updatePromises);
+
+    alert(`Successfully updated ${filteredDates.length} matching date(s).`);
+    setIsModalOpen(false);
+    if (fetchDoctors) fetchDoctors();
+
+  } catch (err) {
+    console.error("Update Failed:", err);
+    alert(err.response?.data?.message || "An error occurred.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   const inputCls = "w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all";
 
@@ -313,100 +328,158 @@ const AllDoctors = () => {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white">
+              <div className="overflow-y-auto flex-1 px-6 py-6 space-y-8">
 
-              {/* Step 1: Date */}
-              <div>
-                <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
-                  <Calendar size={11} /> Select Date
-                </label>
-                {/* <input
-                  type="date"
-                  className={inputCls}
-                  value={targetDate}
-                  onChange={e => setTargetDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[0]}
-                /> */}
-                <input type="date" onChange={(e) => setStartDate(e.target.value)} />
-                <input type="date" onChange={(e) => setEndDate(e.target.value)} />
-              </div>
+                {/* Section 1: Date Range & Days */}
+                <section className="space-y-4">
+                  <header className="flex items-center gap-2">
+                    <div className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
+                      <Calendar size={14} />
+                    </div>
+                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Date Range & Days</h3>
+                  </header>
 
-              {/* Step 2: Time + Add */}
-              <div>
-                <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
-                  <Clock size={11} /> Select Time & Add
-                </label>
-                <div className="flex gap-2 items-center">
-                  <div className="flex-1 flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-                    <select value={hour} onChange={e => setHour(e.target.value)}
-                      className="bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer">
-                      {["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(h => <option key={h}>{h}</option>)}
-                    </select>
-                    <span className="text-slate-400 font-bold text-sm">:</span>
-                    <select value={minute} onChange={e => setMinute(e.target.value)}
-                      className="bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer">
-                      {["00", "15", "30", "45"].map(m => <option key={m}>{m}</option>)}
-                    </select>
-                    <div className="ml-1 flex rounded-lg overflow-hidden border border-slate-200 bg-white">
-                      {['AM', 'PM'].map(p => (
-                        <button key={p} onClick={() => setPeriod(p)}
-                          className={`px-2.5 py-1 text-xs font-bold transition-all ${period === p ? 'bg-emerald-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}>
-                          {p}
-                        </button>
-                      ))}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">Start Date</label>
+                      <input
+                        type="date"
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                        onChange={(e) => setStartDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">End Date</label>
+                      <input
+                        type="date"
+                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all"
+                        onChange={(e) => setEndDate(e.target.value)}
+                      />
                     </div>
                   </div>
-                  <button onClick={addSlot}
-                    className="w-10 h-10 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center justify-center flex-shrink-0 shadow-sm transition-colors">
-                    <Plus size={18} />
-                  </button>
-                </div>
-              </div>
 
-              {/* Slot preview per date */}
-              {Object.keys(dates).length > 0 && (
-                <div>
-                  <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-3">
-                    Scheduled Slots
-                  </label>
-                  <div className="space-y-3">
-                    {Object.entries(dates).sort().map(([date, slots]) => (
-                      <div key={date} className="border border-slate-100 rounded-xl overflow-hidden">
-                        <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-100">
-                          <div className="flex items-center gap-2">
-                            <Calendar size={12} className="text-emerald-600" />
-                            <span className="text-xs font-bold text-slate-700">
-                              {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-medium">{slots.length} slot{slots.length !== 1 ? 's' : ''}</span>
-                          </div>
-                          <button onClick={() => removeDate(date)} className="text-slate-300 hover:text-red-500 transition-colors">
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                        <div className="p-2.5 flex flex-wrap gap-1.5">
-                          {slots.map((s, i) => (
-                            <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 text-slate-700 text-[11px] font-semibold rounded-lg shadow-sm">
-                              <Clock size={9} className="text-emerald-500" />
-                              {s}
-                              <button onClick={() => removeSlot(date, i)} className="text-slate-300 hover:text-red-500 transition-colors ml-0.5">
-                                <X size={10} />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {daysList.map(day => (
+                      <label key={day} className="group cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="hidden"
+                          value={day}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedDays([...selectedDays, day]);
+                            } else {
+                              setSelectedDays(selectedDays.filter(d => d !== day));
+                            }
+                          }}
+                        />
+                        <span className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all 
+              ${selectedDays.includes(day)
+                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm'
+                            : 'bg-white border-slate-200 text-slate-500 hover:border-emerald-300'}`}>
+                          {day.substring(0, 3)}
+                        </span>
+                      </label>
                     ))}
                   </div>
-                </div>
-              )}
+                </section>
 
-              {Object.keys(dates).length === 0 && (
-                <div className="text-center py-6 border border-dashed border-slate-200 rounded-xl text-slate-400">
-                  <Clock size={24} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-xs font-medium">Pick a date, select time and tap +</p>
+                <hr className="border-slate-100" />
+
+                {/* Section 2: Time Selection */}
+                <section className="space-y-4">
+                  <header className="flex items-center gap-2">
+                    <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+                      <Clock size={14} />
+                    </div>
+                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Set Time Slot</h3>
+                  </header>
+
+                  <div className="flex gap-3 items-end">
+                    <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                      <select
+                        value={hour}
+                        onChange={e => setHour(e.target.value)}
+                        className="bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer flex-1"
+                      >
+                        {["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"].map(h => <option key={h}>{h}</option>)}
+                      </select>
+                      <span className="text-slate-400 font-bold">:</span>
+                      <select
+                        value={minute}
+                        onChange={e => setMinute(e.target.value)}
+                        className="bg-transparent text-sm font-bold outline-none text-slate-800 cursor-pointer flex-1"
+                      >
+                        {["00", "15", "30", "45"].map(m => <option key={m}>{m}</option>)}
+                      </select>
+
+                      <div className="flex bg-white rounded-lg p-0.5 border border-slate-200">
+                        {['AM', 'PM'].map(p => (
+                          <button
+                            key={p}
+                            onClick={() => setPeriod(p)}
+                            className={`px-3 py-1 text-[10px] font-black rounded-md transition-all ${period === p ? 'bg-slate-800 text-white' : 'text-slate-400 hover:bg-slate-50'}`}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={addSlot}
+                      className="h-[46px] px-5 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 flex items-center justify-center shadow-md shadow-emerald-200 transition-all active:scale-95"
+                    >
+                      <Plus size={20} strokeWidth={3} />
+                    </button>
+                  </div>
+                </section>
+
+                {/* Section 3: Preview */}
+                <div className="pt-4">
+                  <label className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-4">
+                    Scheduled Review
+                  </label>
+
+                  {Object.keys(dates).length > 0 ? (
+                    <div className="space-y-4">
+                      {Object.entries(dates).sort().map(([date, slots]) => (
+                        <div key={date} className="group bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm hover:border-emerald-200 transition-colors">
+                          <div className="flex items-center justify-between px-4 py-3 bg-slate-50/50 border-b border-slate-100">
+                            <div className="flex items-center gap-3">
+                              <Calendar size={14} className="text-emerald-500" />
+                              <span className="text-xs font-bold text-slate-700">
+                                {new Date(date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </span>
+                            </div>
+                            <button onClick={() => removeDate(date)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <div className="p-3 flex flex-wrap gap-2">
+                            {slots.map((s, i) => (
+                              <div key={i} className="group/item flex items-center gap-2 pl-3 pr-2 py-1.5 bg-emerald-50/50 border border-emerald-100 text-emerald-700 text-[11px] font-bold rounded-xl">
+                                {s}
+                                <button onClick={() => removeSlot(date, i)} className="p-0.5 rounded-md hover:bg-emerald-200/50 text-emerald-400 hover:text-emerald-600">
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 border-2 border-dashed border-slate-100 rounded-3xl bg-slate-50/30">
+                      <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm mb-3">
+                        <Clock size={20} className="text-slate-300" />
+                      </div>
+                      <p className="text-xs font-bold text-slate-400">No time slots scheduled yet</p>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Footer */}

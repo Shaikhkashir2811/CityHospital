@@ -75,6 +75,7 @@ const AppointmentForm = () => {
   const [emailError, setEmailError] = useState('');
   const [emailChecking, setEmailChecking] = useState(false);
   const [emailValid, setEmailValid] = useState(false);
+  const [showPayModal, setShowPayModal] = useState(false);
 
 
   const getAuthHeaders = () => ({
@@ -120,34 +121,49 @@ useEffect(() => {
      FIX: date selection no longer lives inside a <form>, so picking a date
      never triggers a form submission / page navigation.                     */
   /* ── inside AppointmentForm.jsx ── */
-  useEffect(() => {
-    if (!selectedDate || !doctor) {
-      setSlotsForDate([]);
+  /* ── when date changes, look up slots ── */
+useEffect(() => {
+  if (!selectedDate || !doctor) {
+    setSlotsForDate([]);
+    return;
+  }
+
+  // 1. Get the Recurring Rule (usually the first one in the array)
+  const schedule = doctor.recurringSchedule?.[0];
+  
+  if (schedule) {
+    const targetDate = new Date(selectedDate);
+    
+    // Get the 3-letter shorthand for the selected day (e.g., 'Mon')
+    const dayName = targetDate.toLocaleDateString('en-US', { weekday: 'short' });
+
+    // 2. CHECK: If the selected date's day isn't in the allowed days, show nothing
+    if (!schedule.days.includes(dayName)) {
+      setSlotsForDate([]); // Hide slots for Tuesday, Thursday, etc.
       return;
     }
+  }
 
-    // 1. Get available times for this date
-    const av = doctor.availableSlots;
-    let rawSlots = [];
-    if (Array.isArray(av)) {
-      const dayData = av.find((s) => s.date === selectedDate);
-      rawSlots = dayData?.slots || [];
-    } else {
-      rawSlots = av[selectedDate] || [];
-    }
+  // 3. Get available times for this date from the availableSlots object
+  const av = doctor.availableSlots;
+  let rawSlots = [];
+  if (Array.isArray(av)) {
+    const dayData = av.find((s) => s.date === selectedDate);
+    rawSlots = dayData?.slots || [];
+  } else {
+    rawSlots = av[selectedDate] || [];
+  }
 
-    // 2. Fetch booked times using the EXACT same key format as your log
-    // If your log shows '2026-04-09', ensure selectedDate is also '2026-04-09'
-    const bookedForThisDate = doctor.slots_booked?.[selectedDate] || [];
+  // 4. Fetch booked times 
+  const bookedForThisDate = doctor.slots_booked?.[selectedDate] || [];
 
-    const mapped = rawSlots.map((time) => ({
-      time,
-      // LOOKUP CHECK:
-      isBooked: bookedForThisDate.includes(time),
-    }));
+  const mapped = rawSlots.map((time) => ({
+    time,
+    isBooked: bookedForThisDate.includes(time),
+  }));
 
-    setSlotsForDate(mapped);
-  }, [selectedDate, doctor]);
+  setSlotsForDate(mapped);
+}, [selectedDate, doctor]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -175,30 +191,21 @@ useEffect(() => {
   };
 
   /* ── FIX: booking handler attached to the patient form only ── */
-  const handleBooking = async (e) => {
+ // Opens the popup (called by the form submit button)
+const handleOpenPayModal = (e) => {
   e.preventDefault();
+  setShowPayModal(true);
+};
 
+// Actually calls the API (called by "Confirm & Pay" inside the popup)
+const handleConfirmPayment = async () => {
   if (isSubmitting) return;
   setIsSubmitting(true);
-
   try {
-    // 2. Construct the payload
-    const payload = {
-      docId,
-      slotDate: selectedDate, 
-      slotTime: slotTime,     
-      ...patientData          
-    };
-
-    // 3. Use the 'api' instance and 'getAuthHeaders()'
-    // This replaces the raw axios call and hardcoded URL
-    const res = await api.post(
-      '/api/user/book-appointment', 
-      payload, 
-      getAuthHeaders() // This automatically injects { headers: { token: '...' } }
-    );
-
+    const payload = { docId, slotDate: selectedDate, slotTime, ...patientData };
+    const res = await api.post('/api/user/book-appointment', payload, getAuthHeaders());
     if (res.data.success) {
+      setShowPayModal(false);
       setIsBooked(true);
       toast.success("Appointment Booked!");
     } else {
@@ -206,12 +213,10 @@ useEffect(() => {
       setIsSubmitting(false);
     }
   } catch (err) {
-    console.error("Booking Error:", err);
     toast.error(err.response?.data?.message || "Server error. Please try again.");
     setIsSubmitting(false);
   }
 };
-
   /* ── loading / not-found states ── */
   if (loading)
     return (
@@ -269,6 +274,71 @@ useEffect(() => {
       `}</style>
 
       <div className="max-w-5xl mx-auto">
+        {showPayModal && (
+  <div
+    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 50 }}
+    className="flex items-center justify-center px-4"
+    onClick={() => !isSubmitting && setShowPayModal(false)}
+  >
+    <div
+      className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-xl"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div className="text-center mb-6">
+        <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
+          <CheckCircle size={24} className="text-emerald-500" />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900">Confirm your booking</h3>
+        <p className="text-xs text-slate-400 mt-1">Review details before paying</p>
+      </div>
+
+      {/* Summary */}
+      <div className="bg-slate-50 rounded-xl p-4 mb-5 space-y-2 text-sm">
+        {[
+          ['Doctor', doctor.name],
+          ['Patient', patientData.name],
+          ['Date', new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })],
+          ['Time', slotTime],
+        ].map(([label, value]) => (
+          <div key={label} className="flex justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+            <span className="text-slate-400">{label}</span>
+            <span className={`font-semibold ${label === 'Time' ? 'text-emerald-600' : 'text-slate-800'}`}>{value}</span>
+          </div>
+        ))}
+        <div className="flex justify-between pt-1">
+          <span className="text-slate-400 font-semibold">Total fee</span>
+          <span className="text-slate-900 font-extrabold flex items-center gap-0.5">
+            <IndianRupee size={14} />{doctor.fees}
+          </span>
+        </div>
+      </div>
+
+      {/* Buttons */}
+      <div className="flex gap-3">
+        <button
+          type="button"
+          disabled={isSubmitting}
+          onClick={() => setShowPayModal(false)}
+          className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-500 text-sm font-semibold hover:bg-slate-50 transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={isSubmitting}
+          onClick={handleConfirmPayment}
+          className="flex-[2] py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
+        >
+          {isSubmitting
+            ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
+            : <><CreditCard size={16} /> Pay ₹{doctor.fees} & Confirm</>
+          }
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
         {/* Back */}
         <button
@@ -446,7 +516,7 @@ useEffect(() => {
                 </div>
               )}
 
-              <form onSubmit={handleBooking} className="space-y-4">
+              <form onSubmit={handleOpenPayModal} className="space-y-4">
                 {/* Name */}
                 <div>
                   <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest block mb-1.5">

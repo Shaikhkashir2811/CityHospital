@@ -30,6 +30,18 @@ const doctorSchema = new mongoose.Schema({
    */
   availableSlots: { type: Object, default: {} },
 
+  recurringSchedule: [
+  {
+    startDate: { type: Date },
+    endDate: { type: Date },
+    days: [{ 
+      type: String, 
+      enum: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] 
+    }],
+    slots: [{ type: String }] // e.g. ["09:00 - 09:30"]
+  }
+],
+
   // --- BOOKING TRACKER ---
   // Records which specific slots from 'availableSlots' have been taken by patients.
   slots_booked: { type: Object, default: {} },
