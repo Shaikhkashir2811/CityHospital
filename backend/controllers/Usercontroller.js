@@ -6,111 +6,111 @@ import PDFDocument from "pdfkit";
 
 // --- 1. PDF Generation Helper ---
 const generateAppointmentPDF = (docData, patient, date, time) => {
-    return new Promise((resolve, reject) => {
-        const doc = new PDFDocument({ size: 'A4', margin: 50 });
-        let buffers = [];
-        doc.on('data', buffers.push.bind(buffers));
-        doc.on('end', () => resolve(Buffer.concat(buffers)));
-        doc.on('error', reject);
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    let buffers = [];
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', () => resolve(Buffer.concat(buffers)));
+    doc.on('error', reject);
 
-        doc.fillColor('#10b981').fontSize(26).text('MEDFLOW HOSPITAL', { align: 'center' });
-        doc.moveDown();
-        doc.strokeColor('#eeeeee').lineWidth(1).moveTo(50, 100).lineTo(550, 100).stroke();
-        doc.moveDown();
-        doc.fillColor('#333333').fontSize(18).text('Appointment Confirmation Receipt', { underline: true });
-        doc.moveDown();
-        doc.fontSize(12).fillColor('#444444').text(`Patient: ${patient.name}`);
-        doc.text(`Email: ${patient.email}`);
-        doc.text(`Doctor: Dr. ${docData.name}`);
-        doc.text(`Date: ${date} | Time: ${time}`);
-        doc.end();
-    });
+    doc.fillColor('#10b981').fontSize(26).text('MEDFLOW HOSPITAL', { align: 'center' });
+    doc.moveDown();
+    doc.strokeColor('#eeeeee').lineWidth(1).moveTo(50, 100).lineTo(550, 100).stroke();
+    doc.moveDown();
+    doc.fillColor('#333333').fontSize(18).text('Appointment Confirmation Receipt', { underline: true });
+    doc.moveDown();
+    doc.fontSize(12).fillColor('#444444').text(`Patient: ${patient.name}`);
+    doc.text(`Email: ${patient.email}`);
+    doc.text(`Doctor: Dr. ${docData.name}`);
+    doc.text(`Date: ${date} | Time: ${time}`);
+    doc.end();
+  });
 };
 
 // --- 2. Main Controller ---
 
 
 export const bookAppointment = async (req, res) => {
-    try {
-        const { docId, slotDate, slotTime, name, email, age, gender } = req.body;
+  try {
+    const { docId, slotDate, slotTime, name, email, age, gender } = req.body;
 
-        // --- STEP 1: DOCTOR & SLOT VALIDATION ---
-        const docData = await doctorModel.findById(docId);
-        if (!docData) return res.json({ success: false, message: "Doctor not found." });
+    // --- STEP 1: DOCTOR & SLOT VALIDATION ---
+    const docData = await doctorModel.findById(docId);
+    if (!docData) return res.json({ success: false, message: "Doctor not found." });
 
-        let currentSlots = docData.slots_booked || {};
+    let currentSlots = docData.slots_booked || {};
 
-        if (currentSlots[slotDate] && currentSlots[slotDate].includes(slotTime)) {
-            return res.json({ success: false, message: "This slot is already booked." });
-        }
+    if (currentSlots[slotDate] && currentSlots[slotDate].includes(slotTime)) {
+      return res.json({ success: false, message: "This slot is already booked." });
+    }
 
-        // --- STEP 2: UPDATE DOCTOR SLOTS ---
-        if (currentSlots[slotDate]) {
-            currentSlots[slotDate].push(slotTime);
-        } else {
-            currentSlots[slotDate] = [slotTime];
-        }
+    // --- STEP 2: UPDATE DOCTOR SLOTS ---
+    if (currentSlots[slotDate]) {
+      currentSlots[slotDate].push(slotTime);
+    } else {
+      currentSlots[slotDate] = [slotTime];
+    }
 
-        // --- STEP 3: DB PERSISTENCE ---
-        const newPatient = new patientModel({
-            docId,
-            doctorName: docData.name,
-            name,
-            email,
-            age,
-            gender,
-            slotDate,
-            slotTime,
-            isCompleted: false
-        });
+    // --- STEP 3: DB PERSISTENCE ---
+    const newPatient = new patientModel({
+      docId,
+      doctorName: docData.name,
+      name,
+      email,
+      age,
+      gender,
+      slotDate,
+      slotTime,
+      isCompleted: false
+    });
 
-        await newPatient.save();
-        await doctorModel.findByIdAndUpdate(docId, { slots_booked: currentSlots });
+    await newPatient.save();
+    await doctorModel.findByIdAndUpdate(docId, { slots_booked: currentSlots });
 
-        // --- STEP 4: GOOGLE CALENDAR LOGIC (The "One-Click" Fix) ---
+    // --- STEP 4: GOOGLE CALENDAR LOGIC (The "One-Click" Fix) ---
 
-        // 1. Parse Date (Assumes "10_04_2026")
-        const [day, month, year] = slotDate.split('_');
+    // 1. Parse Date (Assumes "10_04_2026")
+    const [day, month, year] = slotDate.split('_');
 
-        // 2. Parse Time (Assumes "10:30 AM")
-        const [time, modifier] = slotTime.split(' ');
-        let [hours, minutes] = time.split(':');
+    // 2. Parse Time (Assumes "10:30 AM")
+    const [time, modifier] = slotTime.split(' ');
+    let [hours, minutes] = time.split(':');
 
-        if (hours === '12') {
-            hours = '00';
-        }
-        if (modifier === 'PM') {
-            hours = (parseInt(hours, 10) + 12).toString();
-        } else {
-            hours = hours.padStart(2, '0');
-        }
+    if (hours === '12') {
+      hours = '00';
+    }
+    if (modifier === 'PM') {
+      hours = (parseInt(hours, 10) + 12).toString();
+    } else {
+      hours = hours.padStart(2, '0');
+    }
 
-        // 3. Format strings for Google (YYYYMMDDTHHMMSS)
-        const startTime = `${year}${month}${day}T${hours}${minutes}00`;
+    // 3. Format strings for Google (YYYYMMDDTHHMMSS)
+    const startTime = `${year}${month}${day}T${hours}${minutes}00`;
 
-        // Calculate end time (adds 30 minutes)
-        let endMins = parseInt(minutes) + 30;
-        let endHours = hours;
-        if (endMins >= 60) {
-            endMins -= 60;
-            endHours = (parseInt(hours) + 1).toString().padStart(2, '0');
-        }
-        const endTime = `${year}${month}${day}T${endHours}${endMins.toString().padStart(2, '0')}00`;
+    // Calculate end time (adds 30 minutes)
+    let endMins = parseInt(minutes) + 30;
+    let endHours = hours;
+    if (endMins >= 60) {
+      endMins -= 60;
+      endHours = (parseInt(hours) + 1).toString().padStart(2, '0');
+    }
+    const endTime = `${year}${month}${day}T${endHours}${endMins.toString().padStart(2, '0')}00`;
 
-        // 4. Construct the URL with all fields pre-filled
-        const googleCalendarUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`City Hospital: ${name}`)}&dates=${startTime}/${endTime}&details=${encodeURIComponent(`Patient: ${name}\nAge: ${age}\nGender: ${gender}\nTime: ${slotTime}`)}&location=${encodeURIComponent("City Hospital")}&sf=true&output=xml`;
+    // 4. Construct the URL with all fields pre-filled
+    const googleCalendarUrl = `https://www.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(`City Hospital: ${name}`)}&dates=${startTime}/${endTime}&details=${encodeURIComponent(`Patient: ${name}\nAge: ${age}\nGender: ${gender}\nTime: ${slotTime}`)}&location=${encodeURIComponent("City Hospital")}&sf=true&output=xml`;
 
-        // --- STEP 5: NOTIFICATIONS ---
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-        });
+    // --- STEP 5: NOTIFICATIONS ---
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+    });
 
-        const patientMail = {
-            from: `"City Hospital" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: `Appointment Confirmed ✓ — City Hospital`,
-            html: `
+    const patientMail = {
+      from: `"City Hospital" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: `Appointment Confirmed ✓ — City Hospital`,
+      html: `
   <div style="background:#f4f6f8;padding:24px 16px;font-family:sans-serif;">
     <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;">
       
@@ -160,13 +160,13 @@ export const bookAppointment = async (req, res) => {
       </div>
     </div>
   </div>`
-        };
+    };
 
-        const doctorMail = {
-            from: `"City Hospital" <${process.env.EMAIL_USER}>`,
-            to: docData.email,
-            subject: `New Appointment: ${name} — ${slotDate.replace(/_/g, '/')} at ${slotTime}`,
-            html: `
+    const doctorMail = {
+      from: `"City Hospital" <${process.env.EMAIL_USER}>`,
+      to: docData.email,
+      subject: `New Appointment: ${name} — ${slotDate.replace(/_/g, '/')} at ${slotTime}`,
+      html: `
   <div style="background:#f4f6f8;padding:24px 16px;font-family:sans-serif;">
     <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;">
 
@@ -217,18 +217,18 @@ export const bookAppointment = async (req, res) => {
       </div>
     </div>
   </div>`
-        };
+    };
 
-        // Fire emails
-        await Promise.all([
-            transporter.sendMail(patientMail).catch(() => { }),
-            transporter.sendMail(doctorMail)
-        ]);
+    // Fire emails
+    await Promise.all([
+      transporter.sendMail(patientMail).catch(() => { }),
+      transporter.sendMail(doctorMail)
+    ]);
 
-        res.json({ success: true, message: "Appointment Booked Successfully!" });
+    res.json({ success: true, message: "Appointment Booked Successfully!" });
 
-    } catch (error) {
-        console.error("Booking Error:", error);
-        res.status(500).json({ success: false, message: "Critical Error: " + error.message });
-    }
+  } catch (error) {
+    console.error("Booking Error:", error);
+    res.status(500).json({ success: false, message: "Critical Error: " + error.message });
+  }
 };

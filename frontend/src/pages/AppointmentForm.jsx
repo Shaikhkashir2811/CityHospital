@@ -79,91 +79,91 @@ const AppointmentForm = () => {
 
 
   const getAuthHeaders = () => ({
-  headers: { 
-    Authorization: `Bearer ${localStorage.getItem('token')}`,
-    atoken: localStorage.getItem('atoken') // Including 'atoken' as a backup for your middleware
-  }
-});
+    headers: {
+      Authorization: `Bearer ${localStorage.getItem('token')}`,
+      atoken: localStorage.getItem('atoken') // Including 'atoken' as a backup for your middleware
+    }
+  });
 
   /* ── fetch doctor ── */
-  
-useEffect(() => {
-  const fetchDoc = async () => {
-    try {
-      setLoading(true);
-      
-      // Use the route we KNOW exists on your backend
-      const res = await api.get('/api/admin/all-doctors');
-      
-      if (res.data.success) {
-        // Find the specific doctor from the array
-        const found = res.data.doctors.find((d) => d._id === docId);
-        
-        if (found) {
-          setDoctor(found);
-        } else {
-          console.error("Doctor ID not found in the list");
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching doctor list:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  if (docId) {
-    fetchDoc();
-  }
-}, [docId]);
+  useEffect(() => {
+    const fetchDoc = async () => {
+      try {
+        setLoading(true);
+
+        // Use the route we KNOW exists on your backend
+        const res = await api.get('/api/admin/all-doctors');
+
+        if (res.data.success) {
+          // Find the specific doctor from the array
+          const found = res.data.doctors.find((d) => d._id === docId);
+
+          if (found) {
+            setDoctor(found);
+          } else {
+            console.error("Doctor ID not found in the list");
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching doctor list:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (docId) {
+      fetchDoc();
+    }
+  }, [docId]);
 
   /* ── when date changes, look up slots ──
      FIX: date selection no longer lives inside a <form>, so picking a date
      never triggers a form submission / page navigation.                     */
   /* ── inside AppointmentForm.jsx ── */
   /* ── when date changes, look up slots ── */
-useEffect(() => {
-  if (!selectedDate || !doctor) {
-    setSlotsForDate([]);
-    return;
-  }
-
-  // 1. Get the Recurring Rule (usually the first one in the array)
-  const schedule = doctor.recurringSchedule?.[0];
-  
-  if (schedule) {
-    const targetDate = new Date(selectedDate);
-    
-    // Get the 3-letter shorthand for the selected day (e.g., 'Mon')
-    const dayName = targetDate.toLocaleDateString('en-US', { weekday: 'short' });
-
-    // 2. CHECK: If the selected date's day isn't in the allowed days, show nothing
-    if (!schedule.days.includes(dayName)) {
-      setSlotsForDate([]); // Hide slots for Tuesday, Thursday, etc.
+  useEffect(() => {
+    if (!selectedDate || !doctor) {
+      setSlotsForDate([]);
       return;
     }
-  }
 
-  // 3. Get available times for this date from the availableSlots object
-  const av = doctor.availableSlots;
-  let rawSlots = [];
-  if (Array.isArray(av)) {
-    const dayData = av.find((s) => s.date === selectedDate);
-    rawSlots = dayData?.slots || [];
-  } else {
-    rawSlots = av[selectedDate] || [];
-  }
+    // 1. Get the Recurring Rule (usually the first one in the array)
+    const schedule = doctor.recurringSchedule?.[0];
 
-  // 4. Fetch booked times 
-  const bookedForThisDate = doctor.slots_booked?.[selectedDate] || [];
+    if (schedule) {
+      const targetDate = new Date(selectedDate);
 
-  const mapped = rawSlots.map((time) => ({
-    time,
-    isBooked: bookedForThisDate.includes(time),
-  }));
+      // Get the 3-letter shorthand for the selected day (e.g., 'Mon')
+      const dayName = targetDate.toLocaleDateString('en-US', { weekday: 'short' });
 
-  setSlotsForDate(mapped);
-}, [selectedDate, doctor]);
+      // 2. CHECK: If the selected date's day isn't in the allowed days, show nothing
+      if (!schedule.days.includes(dayName)) {
+        setSlotsForDate([]); // Hide slots for Tuesday, Thursday, etc.
+        return;
+      }
+    }
+
+    // 3. Get available times for this date from the availableSlots object
+    const av = doctor.availableSlots;
+    let rawSlots = [];
+    if (Array.isArray(av)) {
+      const dayData = av.find((s) => s.date === selectedDate);
+      rawSlots = dayData?.slots || [];
+    } else {
+      rawSlots = av[selectedDate] || [];
+    }
+
+    // 4. Fetch booked times 
+    const bookedForThisDate = doctor.slots_booked?.[selectedDate] || [];
+
+    const mapped = rawSlots.map((time) => ({
+      time,
+      isBooked: bookedForThisDate.includes(time),
+    }));
+
+    setSlotsForDate(mapped);
+  }, [selectedDate, doctor]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -191,32 +191,32 @@ useEffect(() => {
   };
 
   /* ── FIX: booking handler attached to the patient form only ── */
- // Opens the popup (called by the form submit button)
-const handleOpenPayModal = (e) => {
-  e.preventDefault();
-  setShowPayModal(true);
-};
+  // Opens the popup (called by the form submit button)
+  const handleOpenPayModal = (e) => {
+    e.preventDefault();
+    setShowPayModal(true);
+  };
 
-// Actually calls the API (called by "Confirm & Pay" inside the popup)
-const handleConfirmPayment = async () => {
-  if (isSubmitting) return;
-  setIsSubmitting(true);
-  try {
-    const payload = { docId, slotDate: selectedDate, slotTime, ...patientData };
-    const res = await api.post('/api/user/book-appointment', payload, getAuthHeaders());
-    if (res.data.success) {
-      setShowPayModal(false);
-      setIsBooked(true);
-      toast.success("Appointment Booked!");
-    } else {
-      toast.error(res.data.message || "Booking failed");
+  // Actually calls the API (called by "Confirm & Pay" inside the popup)
+  const handleConfirmPayment = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      const payload = { docId, slotDate: selectedDate, slotTime, ...patientData };
+      const res = await api.post('/api/user/book-appointment', payload, getAuthHeaders());
+      if (res.data.success) {
+        setShowPayModal(false);
+        setIsBooked(true);
+        toast.success("Appointment Booked!");
+      } else {
+        toast.error(res.data.message || "Booking failed");
+        setIsSubmitting(false);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Server error. Please try again.");
       setIsSubmitting(false);
     }
-  } catch (err) {
-    toast.error(err.response?.data?.message || "Server error. Please try again.");
-    setIsSubmitting(false);
-  }
-};
+  };
   /* ── loading / not-found states ── */
   if (loading)
     return (
@@ -275,70 +275,70 @@ const handleConfirmPayment = async () => {
 
       <div className="max-w-5xl mx-auto">
         {showPayModal && (
-  <div
-    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 50 }}
-    className="flex items-center justify-center px-4"
-    onClick={() => !isSubmitting && setShowPayModal(false)}
-  >
-    <div
-      className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-xl"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {/* Header */}
-      <div className="text-center mb-6">
-        <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
-          <CheckCircle size={24} className="text-emerald-500" />
-        </div>
-        <h3 className="text-lg font-bold text-slate-900">Confirm your booking</h3>
-        <p className="text-xs text-slate-400 mt-1">Review details before paying</p>
-      </div>
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 50 }}
+            className="flex items-center justify-center px-4"
+            onClick={() => !isSubmitting && setShowPayModal(false)}
+          >
+            <div
+              className="bg-white rounded-2xl p-8 w-full max-w-sm shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="text-center mb-6">
+                <div className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle size={24} className="text-emerald-500" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">Confirm your booking</h3>
+                <p className="text-xs text-slate-400 mt-1">Review details before paying</p>
+              </div>
 
-      {/* Summary */}
-      <div className="bg-slate-50 rounded-xl p-4 mb-5 space-y-2 text-sm">
-        {[
-          ['Doctor', doctor.name],
-          ['Patient', patientData.name],
-          ['Date', new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })],
-          ['Time', slotTime],
-        ].map(([label, value]) => (
-          <div key={label} className="flex justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
-            <span className="text-slate-400">{label}</span>
-            <span className={`font-semibold ${label === 'Time' ? 'text-emerald-600' : 'text-slate-800'}`}>{value}</span>
+              {/* Summary */}
+              <div className="bg-slate-50 rounded-xl p-4 mb-5 space-y-2 text-sm">
+                {[
+                  ['Doctor', doctor.name],
+                  ['Patient', patientData.name],
+                  ['Date', new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })],
+                  ['Time', slotTime],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+                    <span className="text-slate-400">{label}</span>
+                    <span className={`font-semibold ${label === 'Time' ? 'text-emerald-600' : 'text-slate-800'}`}>{value}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-1">
+                  <span className="text-slate-400 font-semibold">Total fee</span>
+                  <span className="text-slate-900 font-extrabold flex items-center gap-0.5">
+                    <IndianRupee size={14} />{doctor.fees}
+                  </span>
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={() => setShowPayModal(false)}
+                  className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-500 text-sm font-semibold hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmitting}
+                  onClick={handleConfirmPayment}
+                  className="flex-[2] py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                >
+                  {isSubmitting
+                    ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
+                    : <><CreditCard size={16} /> Pay ₹{doctor.fees} & Confirm</>
+                  }
+                </button>
+              </div>
+            </div>
           </div>
-        ))}
-        <div className="flex justify-between pt-1">
-          <span className="text-slate-400 font-semibold">Total fee</span>
-          <span className="text-slate-900 font-extrabold flex items-center gap-0.5">
-            <IndianRupee size={14} />{doctor.fees}
-          </span>
-        </div>
-      </div>
-
-      {/* Buttons */}
-      <div className="flex gap-3">
-        <button
-          type="button"
-          disabled={isSubmitting}
-          onClick={() => setShowPayModal(false)}
-          className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-500 text-sm font-semibold hover:bg-slate-50 transition-colors"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          disabled={isSubmitting}
-          onClick={handleConfirmPayment}
-          className="flex-[2] py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
-        >
-          {isSubmitting
-            ? <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Processing...</>
-            : <><CreditCard size={16} /> Pay ₹{doctor.fees} & Confirm</>
-          }
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+        )}
 
         {/* Back */}
         <button
@@ -402,6 +402,31 @@ const handleConfirmPayment = async () => {
                       </span>
                     )}
                   </div>
+
+                  {/* ── Available Days ── */}
+                  {doctor.recurringSchedule?.[0]?.days?.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">
+                        Available days
+                      </p>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => {
+                          const isAvailable = doctor.recurringSchedule[0].days.includes(day);
+                          return (
+                            <span
+                              key={day}
+                              className={`w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-bold border-2 ${isAvailable
+                                  ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                  : 'bg-slate-50 border-slate-200 text-slate-300'
+                                }`}
+                            >
+                              {day}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -470,10 +495,10 @@ const handleConfirmPayment = async () => {
                           disabled={slot.isBooked}
                           onClick={() => !slot.isBooked && setSlotTime(slot.time)}
                           className={`slot-btn relative flex flex-col items-center justify-center py-3 px-2 rounded-xl border-2 text-xs font-semibold transition-all ${slot.isBooked
-                              ? 'bg-red-50 border-red-200 cursor-not-allowed'
-                              : slotTime === slot.time
-                                ? 'bg-emerald-500 border-emerald-500 text-white shadow-md'
-                                : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-400 hover:bg-emerald-50'
+                            ? 'bg-red-50 border-red-200 cursor-not-allowed'
+                            : slotTime === slot.time
+                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-md'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-400 hover:bg-emerald-50'
                             }`}
                         >
                           <span className={`text-[11px] font-bold mb-1 ${slot.isBooked ? 'text-red-400' : slotTime === slot.time ? 'text-white' : 'text-slate-800'
@@ -481,10 +506,10 @@ const handleConfirmPayment = async () => {
                             {slot.time}
                           </span>
                           <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${slot.isBooked
-                              ? 'bg-red-100 text-red-500'
-                              : slotTime === slot.time
-                                ? 'bg-emerald-400 text-white'
-                                : 'bg-emerald-50 text-emerald-600'
+                            ? 'bg-red-100 text-red-500'
+                            : slotTime === slot.time
+                              ? 'bg-emerald-400 text-white'
+                              : 'bg-emerald-50 text-emerald-600'
                             }`}>
                             {slot.isBooked ? 'Booked' : 'Available'}
                           </span>
@@ -597,10 +622,10 @@ const handleConfirmPayment = async () => {
                       type="email"
                       placeholder="patient@gmail.com"
                       className={`${inputCls} pr-10 ${emailError
-                          ? 'border-red-400 focus:border-red-400 focus:ring-red-400/10'
-                          : emailValid
-                            ? 'border-emerald-400 focus:border-emerald-500'
-                            : ''
+                        ? 'border-red-400 focus:border-red-400 focus:ring-red-400/10'
+                        : emailValid
+                          ? 'border-emerald-400 focus:border-emerald-500'
+                          : ''
                         }`}
                       value={patientData.email}
                       onChange={handleInputChange}
@@ -677,8 +702,8 @@ const handleConfirmPayment = async () => {
                     type="submit"
                     disabled={!slotTime || !selectedDate || !!emailError || !emailValid || emailChecking}
                     className={`w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all active:scale-95 mt-1 ${!slotTime || !selectedDate || emailError || !emailValid || emailChecking
-                        ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                        : 'bg-emerald-500 hover:bg-emerald-400'
+                      ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                      : 'bg-emerald-500 hover:bg-emerald-400'
                       }`}
                   >
                     <CreditCard size={18} /> Pay & Book Appointment

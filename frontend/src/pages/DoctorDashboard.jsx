@@ -40,10 +40,55 @@ const STATS = (d) => [
     { label: 'Todays Earnings', val: `₹${(d?.totalEarnings ?? 0).toLocaleString('en-IN')}`, icon: IndianRupee },
 ];
 
+const isToday = (slotDate) => {
+    if (!slotDate) return false;
+    const now = new Date();
+    let d, m, y;
+    if (slotDate.includes('_')) [d, m, y] = slotDate.split('_').map(Number);
+    else if (slotDate.includes('-')) [y, m, d] = slotDate.split('-').map(Number);
+    else if (slotDate.includes('/')) [d, m, y] = slotDate.split('/').map(Number);
+    else return false;
+    return d === now.getDate() && m === now.getMonth() + 1 && y === now.getFullYear();
+};
+
+const isFuture = (slotDate) => {
+    if (!slotDate) return false;
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    let d, m, y;
+    if (slotDate.includes('_')) [d, m, y] = slotDate.split('_').map(Number);
+    else if (slotDate.includes('-')) [y, m, d] = slotDate.split('-').map(Number);
+    else if (slotDate.includes('/')) [d, m, y] = slotDate.split('/').map(Number);
+    else return false;
+    return new Date(y, m - 1, d) > now;
+};
+
+const isPast = (slotDate) => {
+    if (!slotDate) return false;
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    let d, m, y;
+    if (slotDate.includes('_')) [d, m, y] = slotDate.split('_').map(Number);
+    else if (slotDate.includes('-')) [y, m, d] = slotDate.split('-').map(Number);
+    else if (slotDate.includes('/')) [d, m, y] = slotDate.split('/').map(Number);
+    else return false;
+    return new Date(y, m - 1, d) < now;
+};
+
+const formatSlotDate = (slotDate) => {
+    if (!slotDate) return '';
+    let d, m, y;
+    if (slotDate.includes('_')) [d, m, y] = slotDate.split('_').map(Number);
+    else if (slotDate.includes('-')) [y, m, d] = slotDate.split('-').map(Number);
+    else if (slotDate.includes('/')) [d, m, y] = slotDate.split('/').map(Number);
+    else return slotDate;
+    return new Date(y, m - 1, d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
 /* ─── component ──────────────────────────────────────────────── */
 const DoctorDashboard = () => {
     const [dashData, setDashData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [queueFilter, setQueueFilter] = useState('today');
+    const [search, setSearch] = useState('');
 
     const getAuthHeaders = () => ({
         headers: {
@@ -53,60 +98,75 @@ const DoctorDashboard = () => {
     });
 
     const fetchDoctorStats = async () => {
-    try {
-        // 1. Use the 'api' instance
-        // 2. Pass 'getAuthHeaders()' as the config object
-        const { data } = await api.get(
-            '/api/doctor/dashboard', 
-            getAuthHeaders()
-        );
+        try {
+            // 1. Use the 'api' instance
+            // 2. Pass 'getAuthHeaders()' as the config object
+            const { data } = await api.get(
+                '/api/doctor/dashboard',
+                getAuthHeaders()
+            );
 
-        console.log("Full API Response:", data);
+            console.log("Full API Response:", data);
 
-        if (data.success) {
-            setDashData(data.dashData);
-            console.log("Dashboard Data Set:", data.dashData);
-        } else {
-            // Handle cases where success is false but status is 200
-            toast.error(data.message || "Failed to fetch dashboard data");
+            if (data.success) {
+                setDashData(data.dashData);
+                console.log("Dashboard Data Set:", data.dashData);
+            } else {
+                // Handle cases where success is false but status is 200
+                toast.error(data.message || "Failed to fetch dashboard data");
+            }
+        } catch (err) {
+            console.error("Dashboard Fetch Error:", err);
+
+            // Handle unauthorized or session expired
+            if (err.response?.status === 401) {
+                toast.error("Session expired. Please login again.");
+            } else {
+                toast.error(err.response?.data?.message || "Failed to fetch dashboard data");
+            }
+        } finally {
+            setLoading(false);
         }
-    } catch (err) {
-        console.error("Dashboard Fetch Error:", err);
-        
-        // Handle unauthorized or session expired
-        if (err.response?.status === 401) {
-            toast.error("Session expired. Please login again.");
-        } else {
-            toast.error(err.response?.data?.message || "Failed to fetch dashboard data");
-        }
-    } finally {
-        setLoading(false);
-    }
-};
+    };
 
     const markAsDone = async (id) => {
-    try {
-        // 1. Use the 'api' instance
-        // 2. Pass 'getAuthHeaders()' as the 3rd argument (config)
-        const { data } = await api.post(
-            '/api/doctor/complete-appointment',
-            { appointmentId: id },
-            getAuthHeaders()
-        );
+        try {
+            // 1. Use the 'api' instance
+            // 2. Pass 'getAuthHeaders()' as the 3rd argument (config)
+            const { data } = await api.post(
+                '/api/doctor/complete-appointment',
+                { appointmentId: id },
+                getAuthHeaders()
+            );
 
-        if (data.success) {
-            toast.success('Completed');
-            fetchDoctorStats(); // Refresh your dashboard data
-        } else {
-            toast.error(data.message || 'Action failed');
+            if (data.success) {
+                toast.success('Completed');
+                fetchDoctorStats(); // Refresh your dashboard data
+            } else {
+                toast.error(data.message || 'Action failed');
+            }
+        } catch (err) {
+            console.error("Complete Appointment Error:", err);
+            toast.error(err.response?.data?.message || "Failed to update status");
         }
-    } catch (err) {
-        console.error("Complete Appointment Error:", err);
-        toast.error(err.response?.data?.message || "Failed to update status");
-    }
-};
+    };
 
     useEffect(() => { fetchDoctorStats(); }, []);
+    const filteredAppointments = React.useMemo(() => {
+        const list = dashData?.appointments || [];
+        let filtered;
+        if (queueFilter === 'today') filtered = list.filter(a => isToday(a.slotDate));
+        if (queueFilter === 'upcoming') filtered = list.filter(a => isFuture(a.slotDate));
+        if (queueFilter === 'history') filtered = list.filter(a => isPast(a.slotDate));
+
+        if (!search.trim()) return filtered;
+        const q = search.toLowerCase();
+        return filtered.filter(a =>
+            a.name?.toLowerCase().includes(q) ||
+            a.email?.toLowerCase().includes(q) ||
+            a.gender?.toLowerCase().includes(q)
+        );
+    }, [dashData, queueFilter, search]);
 
     /* ── loading ── */
     if (loading) return (
@@ -175,65 +235,169 @@ const DoctorDashboard = () => {
 
                     {/* ── QUEUE ── */}
                     <div className="dd-queue">
-
                         <div className="dd-shimmer-bar" />
 
                         <div className="dd-q-header">
                             <div className="dd-q-title">
                                 <Clock size={17} color="#3d9a5e" strokeWidth={2} />
-                                <span className="dd-q-title-txt">Patient Queue</span>
+                                <span className="dd-q-title-txt">
+                                    {queueFilter === 'today' ? 'Patient Queue'
+                                        : queueFilter === 'upcoming' ? 'Upcoming Patients'
+                                            : 'Past History'}
+                                </span>
                             </div>
-                            <span className="dd-q-count">
-                                {dashData?.appointments?.length ?? 0} Patients
-                            </span>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                {/* Search box */}
+                                <div style={{ position: 'relative' }}>
+                                    <svg
+                                        style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }}
+                                        width="13" height="13" viewBox="0 0 24 24" fill="none"
+                                        stroke="#6abf88" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                                    >
+                                        <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                    </svg>
+                                    <input
+                                        type="text"
+                                        placeholder="Search patient…"
+                                        value={search}
+                                        onChange={e => setSearch(e.target.value)}
+                                        style={{
+                                            paddingLeft: 30, paddingRight: search ? 28 : 12,
+                                            paddingTop: 7, paddingBottom: 7,
+                                            borderRadius: 20,
+                                            border: '1px solid #c6e9d4',
+                                            background: '#f0faf4',
+                                            fontSize: 12, fontWeight: 500,
+                                            color: '#1a3d2b',
+                                            outline: 'none',
+                                            width: 180,
+                                            transition: 'all .2s',
+                                        }}
+                                        onFocus={e => {
+                                            e.target.style.background = '#fff';
+                                            e.target.style.boxShadow = '0 0 0 2px rgba(61,154,94,.2)';
+                                        }}
+                                        onBlur={e => {
+                                            e.target.style.background = '#f0faf4';
+                                            e.target.style.boxShadow = 'none';
+                                        }}
+                                    />
+                                    {search && (
+                                        <button
+                                            onClick={() => setSearch('')}
+                                            style={{
+                                                position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                                                background: 'none', border: 'none', cursor: 'pointer',
+                                                color: '#6abf88', fontSize: 14, lineHeight: 1, padding: 0,
+                                            }}
+                                        >✕</button>
+                                    )}
+                                </div>
+
+                                {/* Count badge */}
+                                <span className="dd-q-count">
+                                    {filteredAppointments.length} Patient{filteredAppointments.length !== 1 ? 's' : ''}
+                                    {search && ` found`}
+                                </span>
+                            </div>
                         </div>
 
-                        {/* desktop table */}
+                        {/* ── Filter Tabs ── */}
+                        <div style={{
+                            display: 'flex', gap: 6, padding: '12px 22px',
+                            borderBottom: '1px solid #f0faf4', background: '#fafffe',
+                        }}>
+                            {[
+                                { key: 'today', label: 'Today' },
+                                { key: 'upcoming', label: 'Upcoming' },
+                                { key: 'history', label: 'History' },
+                            ].map(({ key, label }) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setQueueFilter(key)}
+                                    style={{
+                                        padding: '6px 18px',
+                                        borderRadius: 20,
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        fontSize: 12,
+                                        fontWeight: 600,
+                                        letterSpacing: '.04em',
+                                        transition: 'all .15s',
+                                        background: queueFilter === key ? 'linear-gradient(135deg,#52c07a,#2e8b55)' : '#f0faf4',
+                                        color: queueFilter === key ? '#fff' : '#6abf88',
+                                        boxShadow: queueFilter === key ? '0 2px 10px rgba(46,139,85,.22)' : 'none',
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* ── Desktop Table ── */}
                         <div className="dd-tbl-wrap">
                             <table className="dd-tbl">
                                 <thead>
                                     <tr className="dd-thead">
-                                        <th className="dd-th" style={{ width: 44, color: 'green-500' }}></th>
-                                        <th className="dd-th" >Patient Name</th>
-                                        <th className="dd-th">Age  </th>
+                                        <th className="dd-th" style={{ width: 44 }}></th>
+                                        <th className="dd-th">Patient Name</th>
+                                        <th className="dd-th">Age</th>
                                         <th className="dd-th">Gender</th>
+                                        {queueFilter !== 'today' && <th className="dd-th">Date</th>}
                                         <th className="dd-th">Slot Time</th>
-                                        <th className="dd-th" style={{ textAlign: 'center' }}>Action</th>
+                                        {queueFilter !== 'history' && (
+                                            <th className="dd-th" style={{ textAlign: 'center' }}>Action</th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {dashData?.appointments?.map((app) => (
+                                    {filteredAppointments.map((app) => (
                                         <tr key={app._id} className="dd-row">
                                             <td className="dd-td">
                                                 <span className="dd-dot dd-pulse" />
                                             </td>
-                                            <td className="dd-td" style={{ fontWeight: 600, textDecoration: 'bold', color: 'text-green-500' }}>
+                                            <td className="dd-td" style={{ fontWeight: 600, color: '#1a3d2b' }}>
                                                 {app.name}
                                             </td>
                                             <td className="dd-td">
-                                                <span className="dd-age">{app.age} </span>
+                                                <span className="dd-age">{app.age}</span>
                                             </td>
                                             <td className="dd-td">
-                                                <span className="dd-age">{app.gender} </span>
+                                                <span className="dd-age">{app.gender}</span>
                                             </td>
+                                            {queueFilter !== 'today' && (
+                                                <td className="dd-td">
+                                                    <span style={{
+                                                        display: 'inline-block',
+                                                        background: '#eff6ff', color: '#1d4ed8',
+                                                        border: '1px solid #bfdbfe',
+                                                        borderRadius: 20, padding: '3px 11px',
+                                                        fontSize: 12, fontWeight: 500,
+                                                    }}>
+                                                        {formatSlotDate(app.slotDate)}
+                                                    </span>
+                                                </td>
+                                            )}
                                             <td className="dd-td">
                                                 <span className="dd-time">{app.slotTime}</span>
                                             </td>
-
-                                            <td className="dd-td" style={{ textAlign: 'center' }}>
-                                                <button className="dd-btn" onClick={() => markAsDone(app._id)}>
-                                                    ✓ Done
-                                                </button>
-                                            </td>
+                                            {queueFilter !== 'history' && (
+                                                <td className="dd-td" style={{ textAlign: 'center' }}>
+                                                    <button className="dd-btn" onClick={() => markAsDone(app._id)}>
+                                                        ✓ Done
+                                                    </button>
+                                                </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         </div>
 
-                        {/* mobile cards */}
+                        {/* ── Mobile Cards ── */}
                         <div className="dd-mob-list">
-                            {dashData?.appointments?.map((app) => (
+                            {filteredAppointments.map((app) => (
                                 <div key={app._id} className="dd-mob-card">
                                     <div className="dd-mob-top">
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -244,24 +408,41 @@ const DoctorDashboard = () => {
                                         </div>
                                         <span className="dd-time">{app.slotTime}</span>
                                     </div>
-                                    <span className="dd-age" style={{ marginBottom: 12, display: 'inline-block' }}>
-                                        {app.age} yrs • {app.gender}
-                                    </span>
-                                    <button className="dd-btn dd-btn-full" onClick={() => markAsDone(app._id)}>
-                                        ✓ Mark as Done
-                                    </button>
+
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                                        <span className="dd-age">{app.age} yrs • {app.gender}</span>
+                                        {queueFilter !== 'today' && (
+                                            <span style={{
+                                                display: 'inline-block',
+                                                background: '#eff6ff', color: '#1d4ed8',
+                                                border: '1px solid #bfdbfe',
+                                                borderRadius: 20, padding: '3px 11px',
+                                                fontSize: 12, fontWeight: 500,
+                                            }}>
+                                                {formatSlotDate(app.slotDate)}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {queueFilter !== 'history' && (
+                                        <button className="dd-btn dd-btn-full" onClick={() => markAsDone(app._id)}>
+                                            ✓ Mark as Done
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </div>
 
-                        {(!dashData?.appointments || dashData.appointments.length === 0) && (
+                        {/* ── Empty State ── */}
+                        {filteredAppointments.length === 0 && (
                             <div className="dd-empty">
                                 <UserCheck size={34} color="#c6e9d4" strokeWidth={1.3}
                                     style={{ display: 'block', margin: '0 auto 10px' }} />
-                                No patients in queue today
+                                {queueFilter === 'today' ? 'No patients in queue today'
+                                    : queueFilter === 'upcoming' ? 'No upcoming appointments'
+                                        : 'No past appointments found'}
                             </div>
                         )}
-
                     </div>
                 </div>
             </div>

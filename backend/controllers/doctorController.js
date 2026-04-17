@@ -116,12 +116,12 @@ export const getDoctorDashboard = async (req, res) => {
         const day = String(today.getDate()).padStart(2, '0');
         const month = String(today.getMonth() + 1).padStart(2, '0');
         const year = today.getFullYear();
-        
+
         // Matches "2026-04-10" format in your DB
-        const formattedToday = `${year}-${month}-${day}`; 
+        const formattedToday = `${year}-${month}-${day}`;
 
         // 3. Filter for Today's Queue (Only those NOT completed)
-        const todayQueue = appointments.filter(app => 
+        const todayQueue = appointments.filter(app =>
             app.slotDate === formattedToday && app.isCompleted === false
         );
 
@@ -138,11 +138,9 @@ export const getDoctorDashboard = async (req, res) => {
             totalAppointments: appointments.length,
             totalPatients: uniqueEmails.length,
             todayAppointments: todayQueue.length,
-            // We reverse todayQueue so the most recent "Today" booking is at the top
-            appointments: todayQueue.reverse() 
+            appointments: appointments.reverse()  // ← send ALL appointments, not just today
         };
 
-       
         res.json({ success: true, dashData });
 
     } catch (error) {
